@@ -2,6 +2,7 @@
 #include <taihen.h>
 #include <libk/string.h>
 #include <libk/stdio.h>
+#include <kuio.h>
 #include "renderer.h"
 
 #define HOOKS_NUM    5  // Hooked functions num
@@ -24,6 +25,9 @@ static uint64_t last_tick1, last_tick2, last_tick3;
 static int cfg_i = 0;
 static uint32_t old_buttons;
 static uint8_t update_tick1, update_tick2, update_tick3;
+static char titleid[16];
+static char fname[128];
+static char btn_mask[BUTTONS_NUM];
 
 typedef struct ctrlSetting{
 	uint32_t code;
@@ -51,7 +55,7 @@ static char* str_types[TYPES_NUM] = {
 
 // Config Menu Renderer
 void drawConfigMenu(){
-	drawString(5, 50, "TurboPad v.0.1 - CONFIG MENU");
+	drawString(5, 50, "TurboPad v.0.2 - CONFIG MENU");
 	int i;
 	for (i = 0; i < BUTTONS_NUM; i++){
 		(i == cfg_i) ? setTextColor(0x0000FF00) : setTextColor(0x00FFFFFF);
@@ -116,14 +120,47 @@ void applyTurbo(SceCtrlData *ctrl, uint8_t j){
 	
 }
 
-// TODO: Figure out how to properly access SD in userspace
+void saveConfig(void){
+	
+	// Opening config file for the running app
+	SceUID fd;
+	sprintf(fname, "ux0:/data/TurboPad/%s.bin", titleid);
+	kuIoOpen(fname, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, &fd);
+	
+	// Populating buttons mask
+	int i = 0;
+	while (i < BUTTONS_NUM){
+		btn_mask[i] = turboTable[i].type;
+		i++;
+	}
+	
+	// Saving buttons mask
+	kuIoWrite(fd, btn_mask, BUTTONS_NUM);
+	kuIoClose(fd);
+	
+}
+
 void loadConfig(void){
+	
+	kuIoMkdir("ux0:/data/TurboPad"); // Just in case the folder doesn't exist
+	
+	// Getting game Title ID
+	sceAppMgrAppParamGetString(0, 12, titleid , 256);
+	
+	// Loading config file for the selected app if exists
+	SceUID fd;
+	sprintf(fname, "ux0:/data/TurboPad/%s.bin", titleid);
+	kuIoOpen(fname, SCE_O_RDONLY, &fd);
+	if (fd >= 0){
+		kuIoRead(fd, btn_mask, BUTTONS_NUM);
+		kuIoClose(fd);
+	}else memset(btn_mask, 0, BUTTONS_NUM);
 	
 	// Populating turboTable
 	int j, i = 0;
 	while (i < BUTTONS_NUM){
 		turboTable[i].code = btns[i];
-		turboTable[i].type = TURBO_DISABLED;
+		turboTable[i].type = btn_mask[i];
 		j = 0;
 		while (j < 4){
 			turboTable[i].states[j++] = 0;
@@ -147,8 +184,10 @@ void configInputHandler(SceCtrlData *ctrl){
 		cfg_i--;
 		if (cfg_i < 0) cfg_i = MENU_ENTRIES-1;
 	}else if ((ctrl->buttons & SCE_CTRL_CROSS) && (!(old_buttons & SCE_CTRL_CROSS))){
-		if (cfg_i == MENU_ENTRIES-1) show_menu = 0;
-		else turboTable[cfg_i].type = (turboTable[cfg_i].type + 1) % TYPES_NUM;
+		if (cfg_i == MENU_ENTRIES-1){ 
+			show_menu = 0;
+			saveConfig();
+		}else turboTable[cfg_i].type = (turboTable[cfg_i].type + 1) % TYPES_NUM;
 	}
 	old_buttons = ctrl->buttons;
 	ctrl->buttons = 0; // Nulling returned buttons

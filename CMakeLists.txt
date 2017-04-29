@@ -32,7 +32,9 @@ target_link_libraries(TurboPad
   taihen_stub
   SceLibKernel_stub
   SceCtrl_stub
+  SceAppMgr_stub
   SceDisplay_stub
+  kuio_stub
   k
   gcc
 )
