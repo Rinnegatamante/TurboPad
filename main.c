@@ -5,10 +5,10 @@
 #include <kuio.h>
 #include "renderer.h"
 
-#define HOOKS_NUM    5  // Hooked functions num
-#define BUTTONS_NUM  12 // Supported buttons num
+#define HOOKS_NUM    13 // Hooked functions num
+#define BUTTONS_NUM  16 // Supported buttons num
 #define TYPES_NUM    5  // Turbo modes num
-#define MENU_ENTRIES 13 // Config menu entries num
+#define MENU_ENTRIES 17 // Config menu entries num
 
 // Currently available turbo modes
 #define TURBO_DISABLED   0
@@ -31,7 +31,7 @@ static char btn_mask[BUTTONS_NUM];
 
 typedef struct ctrlSetting{
 	uint32_t code;
-	uint8_t states[4];
+	uint8_t states[HOOKS_NUM - 1];
 	uint8_t type;
 }ctrlSetting;
 
@@ -40,13 +40,14 @@ ctrlSetting turboTable[BUTTONS_NUM];
 static uint32_t btns[BUTTONS_NUM] = {
 	SCE_CTRL_CROSS, SCE_CTRL_CIRCLE, SCE_CTRL_TRIANGLE, SCE_CTRL_SQUARE,
 	SCE_CTRL_START, SCE_CTRL_SELECT, SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER,
-	SCE_CTRL_UP, SCE_CTRL_RIGHT, SCE_CTRL_LEFT, SCE_CTRL_DOWN
+	SCE_CTRL_UP, SCE_CTRL_RIGHT, SCE_CTRL_LEFT, SCE_CTRL_DOWN, SCE_CTRL_L1,
+	SCE_CTRL_R1, SCE_CTRL_L3, SCE_CTRL_R3
 };
 
 static char* str_btns[BUTTONS_NUM] = {
 	"Cross", "Circle", "Triangle", "Square",
-	"Start", "Select", "L Trigger", "R Trigger",
-	"Up", "Right", "Left", "Down"
+	"Start", "Select", "L Trigger (L2)", "R Trigger (L2)",
+	"Up", "Right", "Left", "Down", "L1", "R1", "L3", "R3"
 };
 
 static char* str_types[TYPES_NUM] = {
@@ -55,7 +56,8 @@ static char* str_types[TYPES_NUM] = {
 
 // Config Menu Renderer
 void drawConfigMenu(){
-	drawString(5, 50, "TurboPad v.0.2 - CONFIG MENU");
+	drawString(5, 30, "Thanks to XandridFire and RaveHeart for their support on Patreon");
+	drawString(5, 50, "TurboPad v.0.3 - CONFIG MENU");
 	int i;
 	for (i = 0; i < BUTTONS_NUM; i++){
 		(i == cfg_i) ? setTextColor(0x0000FF00) : setTextColor(0x00FFFFFF);
@@ -120,6 +122,60 @@ void applyTurbo(SceCtrlData *ctrl, uint8_t j){
 	
 }
 
+void applyTurboNegative(SceCtrlData *ctrl, uint8_t j){
+	
+	// Checking for menu triggering
+	if ((!(ctrl->buttons & SCE_CTRL_START)) && (!(ctrl->buttons & SCE_CTRL_TRIANGLE))){
+		show_menu = 1;
+		cfg_i = 0;
+		return;
+	}
+	
+	// Applying rapidfire rules
+	int i;
+	uint64_t tick = sceKernelGetProcessTimeWide();
+	if (tick - last_tick1 > 100000){
+		update_tick1 = 1;
+		last_tick1 = tick;
+	}
+	if (tick - last_tick2 > 250000){
+		update_tick2 = 1;
+		last_tick2 = tick;
+	}
+	if (tick - last_tick3 > 500000){
+		update_tick3 = 1;
+		last_tick3 = tick;
+	}
+	for (i=0;i<BUTTONS_NUM;i++){
+		switch (turboTable[i].type){
+			case TURBO_DISABLED:
+				continue;
+				break;
+			case TURBO_PER_MSEC:
+				if (!update_tick1) continue;
+				break;
+			case TURBO_PER_MSEC_2:
+				if (!update_tick2) continue;
+				break;
+			case TURBO_PER_SEC:
+				if (!update_tick3) continue;
+				break;
+			default:
+				break;
+		}
+		if (!(ctrl->buttons & turboTable[i].code)){
+			turboTable[i].states[j] = (turboTable[i].states[j] + 1) % 2;
+			ctrl->buttons = ctrl->buttons + (turboTable[i].code * turboTable[i].states[j]);
+		}else turboTable[i].states[j] = 0;
+	}
+	
+	// Resetting tick flags
+	update_tick1 = 0;
+	update_tick2 = 0;
+	update_tick3 = 0;
+	
+}
+
 void saveConfig(void){
 	
 	// Opening config file for the running app
@@ -151,10 +207,11 @@ void loadConfig(void){
 	SceUID fd;
 	sprintf(fname, "ux0:/data/TurboPad/%s.bin", titleid);
 	kuIoOpen(fname, SCE_O_RDONLY, &fd);
+	memset(btn_mask, 0, BUTTONS_NUM);
 	if (fd >= 0){
 		kuIoRead(fd, btn_mask, BUTTONS_NUM);
 		kuIoClose(fd);
-	}else memset(btn_mask, 0, BUTTONS_NUM);
+	}
 	
 	// Populating turboTable
 	int j, i = 0;
@@ -193,6 +250,24 @@ void configInputHandler(SceCtrlData *ctrl){
 	ctrl->buttons = 0; // Nulling returned buttons
 }
 
+// Input Handler for the Config Menu (negative logic)
+void configInputHandlerNegative(SceCtrlData *ctrl){
+	if ((old_buttons & SCE_CTRL_DOWN) && (!(ctrl->buttons & SCE_CTRL_DOWN))){
+		cfg_i++;
+		if (cfg_i >= MENU_ENTRIES) cfg_i = 0;
+	}else if ((old_buttons & SCE_CTRL_UP) && (!(ctrl->buttons & SCE_CTRL_UP))){
+		cfg_i--;
+		if (cfg_i < 0) cfg_i = MENU_ENTRIES-1;
+	}else if ((old_buttons & SCE_CTRL_CROSS) && (!(ctrl->buttons & SCE_CTRL_CROSS))){
+		if (cfg_i == MENU_ENTRIES-1){ 
+			show_menu = 0;
+			saveConfig();
+		}else turboTable[cfg_i].type = (turboTable[cfg_i].type + 1) % TYPES_NUM;
+	}
+	old_buttons = ctrl->buttons;
+	ctrl->buttons = 0xFFFFFFFF; // Nulling returned buttons
+}
+
 // Simplified generic hooking function
 void hookFunction(uint32_t nid, const void *func){
 	hooks[current_hook] = taiHookFunctionImport(&refs[current_hook],TAI_MAIN_MODULE,TAI_ANY_LIBRARY,nid,func);
@@ -227,12 +302,68 @@ int sceCtrlReadBufferPositive2_patched(int port, SceCtrlData *ctrl, int count) {
 	return ret;
 }
 
+int sceCtrlPeekBufferPositiveExt_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[4], port, ctrl, count);
+	if (!show_menu) applyTurbo(ctrl, 4);
+	else configInputHandler(ctrl);
+	return ret;
+}
+
+int sceCtrlPeekBufferPositiveExt2_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[5], port, ctrl, count);
+	if (!show_menu) applyTurbo(ctrl, 5);
+	else configInputHandler(ctrl);
+	return ret;
+}
+
+int sceCtrlReadBufferPositiveExt_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[6], port, ctrl, count);
+	if (!show_menu) applyTurbo(ctrl, 6);
+	else configInputHandler(ctrl);
+	return ret;
+}
+
+int sceCtrlReadBufferPositiveExt2_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[7], port, ctrl, count);
+	if (!show_menu) applyTurbo(ctrl, 7);
+	else configInputHandler(ctrl);
+	return ret;
+}
+
+int sceCtrlPeekBufferNegative_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[8], port, ctrl, count);
+	if (!show_menu) applyTurboNegative(ctrl, 8);
+	else configInputHandlerNegative(ctrl);
+	return ret;
+}
+
+int sceCtrlPeekBufferNegative2_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[9], port, ctrl, count);
+	if (!show_menu) applyTurboNegative(ctrl, 9);
+	else configInputHandlerNegative(ctrl);
+	return ret;
+}
+
+int sceCtrlReadBufferNegative_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[10], port, ctrl, count);
+	if (!show_menu) applyTurboNegative(ctrl, 10);
+	else configInputHandlerNegative(ctrl);
+	return ret;
+}
+
+int sceCtrlReadBufferNegative2_patched(int port, SceCtrlData *ctrl, int count) {
+	int ret = TAI_CONTINUE(int, refs[11], port, ctrl, count);
+	if (!show_menu) applyTurboNegative(ctrl, 11);
+	else configInputHandlerNegative(ctrl);
+	return ret;
+}
+
 int sceDisplaySetFrameBuf_patched(const SceDisplayFrameBuf *pParam, int sync) {
 	if (show_menu){
 		updateFramebuf(pParam);
 		drawConfigMenu();
 	}
-	return TAI_CONTINUE(int, refs[4], pParam, sync);
+	return TAI_CONTINUE(int, refs[12], pParam, sync);
 }
 
 void _start() __attribute__ ((weak, alias ("module_start")));
@@ -246,6 +377,14 @@ int module_start(SceSize argc, const void *args) {
 	hookFunction(0x15F81E8C, sceCtrlPeekBufferPositive2_patched);
 	hookFunction(0x67E7AB83, sceCtrlReadBufferPositive_patched);
 	hookFunction(0xC4226A3E, sceCtrlReadBufferPositive2_patched);
+	hookFunction(0xA59454D3, sceCtrlPeekBufferPositiveExt_patched);
+	hookFunction(0x860BF292, sceCtrlPeekBufferPositiveExt2_patched);
+	hookFunction(0xE2D99296, sceCtrlReadBufferPositiveExt_patched);
+	hookFunction(0xA7178860, sceCtrlReadBufferPositiveExt2_patched);
+	hookFunction(0x104ED1A7, sceCtrlPeekBufferNegative_patched);
+	hookFunction(0x81A89660, sceCtrlPeekBufferNegative2_patched);
+	hookFunction(0x15F96FB0, sceCtrlReadBufferNegative_patched);
+	hookFunction(0x27A0C5FB, sceCtrlReadBufferNegative2_patched);
 	hookFunction(0x7A410B64, sceDisplaySetFrameBuf_patched);
 	
 	return SCE_KERNEL_START_SUCCESS;
