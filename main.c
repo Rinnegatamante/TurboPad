@@ -46,7 +46,7 @@ static uint32_t btns[BUTTONS_NUM] = {
 
 static char* str_btns[BUTTONS_NUM] = {
 	"Cross", "Circle", "Triangle", "Square",
-	"Start", "Select", "L Trigger (L2)", "R Trigger (L2)",
+	"Start", "Select", "L Trigger (L2)", "R Trigger (R2)",
 	"Up", "Right", "Left", "Down", "L1", "R1", "L3", "R3"
 };
 
