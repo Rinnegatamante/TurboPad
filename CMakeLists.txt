@@ -30,11 +30,11 @@ add_executable(TurboPad
 
 target_link_libraries(TurboPad
   taihen_stub
-  SceLibKernel_stub
-  SceCtrl_stub
-  SceAppMgr_stub
-  SceDisplay_stub
-  kuio_stub
+  SceLibKernel_stub_weak
+  SceCtrl_stub_weak
+  SceIofilemgr_stub_weak
+  SceAppMgr_stub_weak
+  SceDisplay_stub_weak
   k
   gcc
 )

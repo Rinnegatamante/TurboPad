@@ -2,7 +2,6 @@
 #include <taihen.h>
 #include <libk/string.h>
 #include <libk/stdio.h>
-#include <kuio.h>
 #include "renderer.h"
 
 #define HOOKS_NUM    13 // Hooked functions num
@@ -179,9 +178,8 @@ void applyTurboNegative(SceCtrlData *ctrl, uint8_t j){
 void saveConfig(void){
 	
 	// Opening config file for the running app
-	SceUID fd;
 	sprintf(fname, "ux0:/data/TurboPad/%s.bin", titleid);
-	kuIoOpen(fname, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, &fd);
+	SceUID fd = sceIoOpen(fname, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
 	
 	// Populating buttons mask
 	int i = 0;
@@ -191,26 +189,25 @@ void saveConfig(void){
 	}
 	
 	// Saving buttons mask
-	kuIoWrite(fd, btn_mask, BUTTONS_NUM);
-	kuIoClose(fd);
+	sceIoWrite(fd, btn_mask, BUTTONS_NUM);
+	sceIoClose(fd);
 	
 }
 
 void loadConfig(void){
 	
-	kuIoMkdir("ux0:/data/TurboPad"); // Just in case the folder doesn't exist
+	sceIoMkdir("ux0:/data/TurboPad", 0777); // Just in case the folder doesn't exist
 	
 	// Getting game Title ID
 	sceAppMgrAppParamGetString(0, 12, titleid , 256);
 	
 	// Loading config file for the selected app if exists
-	SceUID fd;
 	sprintf(fname, "ux0:/data/TurboPad/%s.bin", titleid);
-	kuIoOpen(fname, SCE_O_RDONLY, &fd);
+	SceUID fd = sceIoOpen(fname, SCE_O_RDONLY, 0777);
 	memset(btn_mask, 0, BUTTONS_NUM);
 	if (fd >= 0){
-		kuIoRead(fd, btn_mask, BUTTONS_NUM);
-		kuIoClose(fd);
+		sceIoRead(fd, btn_mask, BUTTONS_NUM);
+		sceIoClose(fd);
 	}
 	
 	// Populating turboTable
